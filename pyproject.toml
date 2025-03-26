@@ -1,0 +1,24 @@
+[project]
+name = "segmentation-playground"
+version = "0.1.0"
+description = ""
+authors = [
+    {name = "Sharad Shriyan",email = "sharad30.ss@gmail.com"}
+]
+readme = "README.md"
+requires-python = ">=3.12,<4.0"
+dependencies = [
+    "torch (>=2.6.0,<3.0.0)",
+    "torchvision (>=0.21.0,<0.22.0)",
+    "loguru (==0.7.3)",
+    "numpy",
+    "tqdm",
+    "pycocotools"
+]
+
+[tool.poetry]
+packages = [{include = "segmentation"}]
+
+[build-system]
+requires = ["poetry-core>=2.0.0,<3.0.0"]
+build-backend = "poetry.core.masonry.api"
