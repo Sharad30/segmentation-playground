@@ -86,7 +86,7 @@ class Evaluator:
                     
                     # Convert to COCO format
                     for box, score, label, mask in zip(boxes, scores, labels, masks):
-                        if score < 0.5:  # Skip low confidence predictions
+                        if score < 0.1:  # Lower threshold from 0.5 to 0.1
                             continue
                             
                         # Convert box to [x, y, width, height] format
@@ -164,15 +164,20 @@ def main():
     # Define configuration
     config = {
         'data_root': './data',
-        'output_dir': './output',
-        'num_classes': 21,  # 20 classes + background for PASCAL VOC
-        'batch_size': 2,
+        'output_dir': './output_person',  # Updated output directory
+        'num_classes': 2,  # Background + person
+        'batch_size': 1,
         'num_workers': 2,
-        'device': 'cuda' if torch.cuda.is_available() else 'cpu'
+        'device': 'cuda' if torch.cuda.is_available() else 'cpu',
     }
     
+    # If there's a VOC_CLASSES list, update it
+    VOC_CLASSES = [
+        'background', 'person'
+    ]
+    
     # Initialize evaluator
-    model_path = './output/best_model.pth'
+    model_path = './output_person/best_model.pth'
     evaluator = Evaluator(model_path, config)
     
     # Evaluate model

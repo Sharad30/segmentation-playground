@@ -13,6 +13,21 @@ class Compose:
     def __call__(self, image, target):
         for t in self.transforms:
             image, target = t(image, target)
+            
+        # Final validation: ensure all boxes have positive width and height
+        if 'boxes' in target and len(target['boxes']) > 0:
+            boxes = target['boxes']
+            for i in range(len(boxes)):
+                box = boxes[i]
+                x1, y1, x2, y2 = box
+                if x2 <= x1 or y2 <= y1:
+                    # Fix the box by adding a small padding
+                    x2 = max(x1 + 1, x2)
+                    y2 = max(y1 + 1, y2)
+                    boxes[i] = torch.tensor([x1, y1, x2, y2], dtype=torch.float32)
+            
+            target['boxes'] = boxes
+            
         return image, target
 
 class ToTensor:

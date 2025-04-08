@@ -7,6 +7,7 @@ from PIL import Image
 import numpy as np
 from loguru import logger
 import random
+from scipy import ndimage
 
 class VOCInstanceSegmentationDataset(Dataset):
     def __init__(self, root, year='2012', image_set='train', transform=None):
@@ -30,16 +31,17 @@ class VOCInstanceSegmentationDataset(Dataset):
         # Convert mask to numpy array for processing
         mask_np = np.array(mask)
         
-        # In VOC, each object instance has a unique color in the segmentation mask
-        # We need to convert this to instance segmentation format
-        # For simplicity, we'll treat each unique value > 0 as a separate instance
-        unique_values = np.unique(mask_np)
-        unique_values = unique_values[unique_values > 0]  # Remove background (0)
+        # For person detection, we only care about class 15 (person in VOC)
+        # Create a binary mask where 1 = person, 0 = everything else
+        person_mask = (mask_np == 15).astype(np.uint8)
+        
+        # Find connected components to separate individual people
+        labeled_mask, num_features = ndimage.label(person_mask)
         
         # Create instance masks
         instance_masks = []
-        for val in unique_values:
-            instance_mask = (mask_np == val).astype(np.uint8)
+        for i in range(1, num_features + 1):  # Skip 0 (background)
+            instance_mask = (labeled_mask == i).astype(np.uint8)
             instance_masks.append(instance_mask)
         
         # If no instances found, create a dummy mask
@@ -49,11 +51,11 @@ class VOCInstanceSegmentationDataset(Dataset):
         # Stack instance masks along a new dimension
         instance_masks = np.stack(instance_masks, axis=0)
         
-        # Create target dictionary
+        # Create target dictionary - all instances are class 1 (person)
         target = {
             'masks': torch.as_tensor(instance_masks, dtype=torch.uint8),
             'image_id': torch.tensor([idx]),
-            'labels': torch.ones((len(instance_masks),), dtype=torch.int64),  # Simplified: all objects are class 1
+            'labels': torch.ones((len(instance_masks),), dtype=torch.int64),  # All are class 1 (person)
             'area': torch.tensor([m.sum() for m in instance_masks], dtype=torch.float32),
             'iscrowd': torch.zeros((len(instance_masks),), dtype=torch.int64)
         }
@@ -62,18 +64,50 @@ class VOCInstanceSegmentationDataset(Dataset):
         boxes = []
         for mask in instance_masks:
             pos = np.where(mask)
-            xmin = np.min(pos[1])
-            xmax = np.max(pos[1])
-            ymin = np.min(pos[0])
-            ymax = np.max(pos[0])
-            boxes.append([xmin, ymin, xmax, ymax])
+            if len(pos[0]) > 0:  # Check if mask is not empty
+                xmin = np.min(pos[1])
+                xmax = np.max(pos[1])
+                ymin = np.min(pos[0])
+                ymax = np.max(pos[0])
+                
+                # Ensure boxes have positive width and height
+                # Add a small padding if width or height is zero
+                if xmax == xmin:
+                    xmax = xmin + 1
+                if ymax == ymin:
+                    ymax = ymin + 1
+                    
+                boxes.append([xmin, ymin, xmax, ymax])
+            else:
+                # For empty masks, create a small valid box
+                boxes.append([0, 0, 1, 1])  # Dummy box for empty mask
         
         target['boxes'] = torch.as_tensor(boxes, dtype=torch.float32)
         
         if self.transform:
             img, target = self.transform(img, target)
             
+        # Final validation: ensure all boxes have positive width and height
+        # This handles cases where the transform might have affected the boxes
+        boxes = target['boxes']
+        for i in range(len(boxes)):
+            box = boxes[i]
+            x1, y1, x2, y2 = box
+            if x2 <= x1 or y2 <= y1:
+                # Fix the box by adding a small padding
+                x2 = max(x1 + 1, x2)
+                y2 = max(y1 + 1, y2)
+                boxes[i] = torch.tensor([x1, y1, x2, y2], dtype=torch.float32)
+        
+        target['boxes'] = boxes
+        
         return img, target
+
+    # Add a method to map VOC pixel values to class IDs
+    def _get_class_id(self, pixel_value):
+        # Map VOC pixel values to class IDs (1-20)
+        # This is a simplified mapping - you'll need to use the actual VOC mapping
+        return (pixel_value % 20) + 1
 
 def get_voc_dataloader(root, year='2012', image_set='train', batch_size=2, transform=None, 
                        num_workers=4, shuffle=True, max_samples=None):

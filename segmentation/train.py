@@ -295,27 +295,24 @@ def main():
     # Define configuration
     config = {
         'data_root': './data',
-        'output_dir': './output',
-        'num_classes': 21,  # 20 classes + background for PASCAL VOC
-        'batch_size': 2,
-        'num_workers': 2,
+        'output_dir': './output_person',
+        'num_classes': 2,  # Background + person
+        'batch_size': 4,  # Can use larger batch size for simpler task
         'learning_rate': 0.005,
         'momentum': 0.9,
         'weight_decay': 0.0005,
         'lr_step_size': 3,
         'lr_gamma': 0.1,
-        'num_epochs': 2,
+        'num_epochs': 5,  # Train for more epochs
         'save_freq': 2,
         'device': 'cuda' if torch.cuda.is_available() else 'cpu',
-        'pretrained': True,
-        'max_samples': 100  # Limit to 100 samples for quick testing
     }
     
     # Initialize trainer
     trainer = Trainer(config)
     
     # Train model
-    trainer.train()
+    # trainer.train()
     
     # After quick test is successful, you can train on the full dataset
     # by setting max_samples to None and continuing from the saved checkpoint

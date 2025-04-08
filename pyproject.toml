@@ -13,11 +13,17 @@ dependencies = [
     "loguru (==0.7.3)",
     "numpy",
     "tqdm",
-    "pycocotools"
+    "pycocotools",
+    "streamlit (>=1.44.0,<2.0.0)",
+    "matplotlib (>=3.10.1,<4.0.0)",
+    "scipy (>=1.15.2,<2.0.0)"
 ]
 
 [tool.poetry]
 packages = [{include = "segmentation"}]
+
+[tool.poetry.group.dev.dependencies]
+ipykernel = "^6.29.5"
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

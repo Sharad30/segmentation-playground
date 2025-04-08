@@ -5,7 +5,7 @@ from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 from torchvision.models.detection.mask_rcnn import MaskRCNNPredictor
 from loguru import logger
 
-def get_instance_segmentation_model(num_classes, pretrained=True):
+def get_instance_segmentation_model(num_classes=2, pretrained=True):  # 2 classes: background and person
     """
     Get a Mask R-CNN model pre-trained on COCO and fine-tune for instance segmentation.
     
@@ -28,7 +28,7 @@ def get_instance_segmentation_model(num_classes, pretrained=True):
     # Get the number of input features for the classifier
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     
-    # Replace the pre-trained head with a new one
+    # Replace the pre-trained head with a new one (background + person)
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
     
     # Get the number of input features for the mask classifier
@@ -42,14 +42,14 @@ def get_instance_segmentation_model(num_classes, pretrained=True):
         num_classes
     )
     
-    # Reduce memory usage for training
+    # Unfreeze more layers for better adaptation
     model.backbone.body.layer4.requires_grad_(True)
     model.backbone.body.layer3.requires_grad_(True)
-    model.backbone.body.layer2.requires_grad_(False)
+    model.backbone.body.layer2.requires_grad_(True)  # Unfreeze layer2
     model.backbone.body.layer1.requires_grad_(False)
     model.backbone.body.conv1.requires_grad_(False)
     
-    logger.info(f"Created Mask R-CNN model with {num_classes} classes")
+    logger.info(f"Created Mask R-CNN model with {num_classes} classes (background + person)")
     logger.info(f"Model trainable parameters: {sum(p.numel() for p in model.parameters() if p.requires_grad)}")
     
     return model 
