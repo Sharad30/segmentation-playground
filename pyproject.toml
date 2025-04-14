@@ -1,26 +1,29 @@
-[project]
+[tool.poetry]
 name = "segmentation-playground"
 version = "0.1.0"
-description = ""
-authors = [
-    {name = "Sharad Shriyan",email = "sharad30.ss@gmail.com"}
-]
+description = "Playground for training various segmentation models"
+authors = ["Sharad Shriyan <sharad30.ss@gmail.com>"]
 readme = "README.md"
-requires-python = ">=3.12,<4.0"
-dependencies = [
-    "torch (>=2.6.0,<3.0.0)",
-    "torchvision (>=0.21.0,<0.22.0)",
-    "loguru (==0.7.3)",
-    "numpy",
-    "tqdm",
-    "pycocotools",
-    "streamlit (>=1.44.0,<2.0.0)",
-    "matplotlib (>=3.10.1,<4.0.0)",
-    "scipy (>=1.15.2,<2.0.0)"
-]
-
-[tool.poetry]
 packages = [{include = "segmentation"}]
+
+[tool.poetry.dependencies]
+python = ">=3.12,<4.0"
+torch = ">=2.6.0,<3.0.0"
+torchvision = ">=0.21.0,<0.22.0"
+loguru = "0.7.3"
+numpy = "*"
+tqdm = "*"
+pycocotools = "*"
+streamlit = ">=1.44.0,<2.0.0"
+matplotlib = ">=3.10.1,<4.0.0"
+scipy = ">=1.15.2,<2.0.0"
+ultralytics = "^8.3.106"
+opencv-python = "^4.11.0.86"
+albumentations = "^1.4.0"
+fiftyone = "0.23.0"
+pyyaml = "^6.0.1"
+pymongo = "4.6.1"
+mongoengine = "0.24.2"
 
 [tool.poetry.group.dev.dependencies]
 ipykernel = "^6.29.5"
