@@ -40,7 +40,7 @@ poetry run python segmentation/ultralytics/convert_detection_to_segmentation.py
 ### Multi-Class Segmentation Model
 
 ```bash
-python segmentation/ultralytics/hyperparameter_tuner.py --data datasets/voc_yolo_segmentation/dataset.yaml --lr 0.001 0.0005 0.0001 --batch 8 16 32 --model_size m --device 0 --epochs 1
+poetry run python segmentation/ultralytics/hyperparameter_tuner.py --data datasets/voc_yolo_segmentation/dataset.yaml --lr 0.001 0.0001 0.00001 --batch 16 32 64 --model_size x --device 0 --epochs 1 --wandb_project segmentation-hyp-tuning-lr-vs-bs
 ```
 
 Training arguments:

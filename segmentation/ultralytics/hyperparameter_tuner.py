@@ -8,8 +8,9 @@ import wandb
 import yaml
 import datetime
 import sys
-import traceback
+import traceback as tb
 import shutil
+import numpy as np
 
 # Import the training function from the existing train.py
 from segmentation.ultralytics.train import train_multiclass_segmentation
@@ -111,13 +112,13 @@ def run_hyperparameter_tuning(
     
     # Run experiments for each combination
     for i, (lr, batch_size) in enumerate(all_combinations):
-        print(f"\n[{i+1}/{total_runs}] Running experiment with lr={lr}, batch_size={batch_size}")
+        print(f"\n[{i+1}/{total_runs}] Running experiment with lr={lr}, batch_size={batch_size}, model={model_size}")
         
-        # Create a unique name for this run
-        run_name = f"{dataset_name}-lr{lr}-bs{batch_size}-{model_size}"
+        # Create a unique name for this run that includes model size
+        run_name = f"{dataset_name}-{model_size}-lr{lr}-bs{batch_size}"
         
-        # Create subdirectory for this experiment
-        run_dir = experiment_dir / f"run_{i+1}_lr{lr}_bs{batch_size}"
+        # Create subdirectory for this experiment that includes model size
+        run_dir = experiment_dir / f"run_{i+1}_{model_size}_lr{lr}_bs{batch_size}"
         run_dir.mkdir(exist_ok=True)
         
         # Set environment variables to ensure W&B is enabled for the training run
@@ -159,9 +160,14 @@ def run_hyperparameter_tuning(
             # Calculate training time
             training_time = (time.time() - start_time) / 60  # minutes
             
-            # Extract metrics
+            # Extract metrics and convert numpy types to native Python types
             box_map50 = getattr(metrics.box, 'map50', 0)
+            if isinstance(box_map50, np.floating):
+                box_map50 = float(box_map50)
+                
             mask_map50 = getattr(metrics.seg, 'map50', 0)
+            if isinstance(mask_map50, np.floating):
+                mask_map50 = float(mask_map50)
             
             print(f"Experiment completed - box_mAP50: {box_map50:.4f}, mask_mAP50: {mask_map50:.4f}")
             
@@ -185,29 +191,29 @@ def run_hyperparameter_tuning(
             
             # Save metrics to YAML file in this run's directory
             run_metrics = {
-                "learning_rate": lr,
-                "batch_size": batch_size,
-                "epochs": epochs,
-                "box_map50": box_map50,
-                "mask_map50": mask_map50,
-                "training_time_minutes": training_time
+                "learning_rate": float(lr),
+                "batch_size": int(batch_size),
+                "model_size": model_size,
+                "epochs": int(epochs),
+                "box_map50": float(box_map50),
+                "mask_map50": float(mask_map50),
+                "training_time_minutes": float(training_time)
             }
             with open(run_dir / "metrics.yaml", "w") as f:
                 yaml.safe_dump(run_metrics, f)
                 
         except Exception as e:
             print(f"Error in run {run_name}: {e}")
-            traceback.print_exc()
+            tb.print_exc()
             result_row = [run_name, lr, batch_size, 0, 0, 0]
             all_results.append(result_row)
             
             # Save error information
             with open(run_dir / "error.txt", "w") as f:
-                f.write(f"Error running experiment with lr={lr}, batch_size={batch_size}:\n")
+                f.write(f"Error running experiment with lr={lr}, batch_size={batch_size}, model={model_size}:\n")
                 f.write(str(e))
                 f.write("\n\nTraceback:\n")
-                import traceback
-                traceback.print_exc(file=f)
+                tb.print_exc(file=f)
     
     # Create a summary run after all experiments are done
     print("\nCreating summary run...")
@@ -396,14 +402,14 @@ def run_hyperparameter_tuning(
             
         except Exception as e:
             print(f"Error creating summary plots: {e}")
-            traceback.print_exc()
+            tb.print_exc()
         
         # Finish the wandb run
         wandb.finish()
         
     except Exception as e:
         print(f"Error in final summary: {e}")
-        traceback.print_exc()
+        tb.print_exc()
     
     print("\nHyperparameter tuning complete!")
     print(f"Results saved to: {experiment_dir}")
