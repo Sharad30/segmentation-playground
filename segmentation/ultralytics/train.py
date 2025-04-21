@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=640, model_size='n', 
                                 patience=5, workers=8, device='', max_plot_items=None, hide_plot_warnings=False,
                                 use_wandb=True, wandb_project="segmentation-multiclass", wandb_name=None, 
-                                wandb_entity=None, resume_wandb=False):
+                                wandb_entity=None, resume_wandb=False, lr=None, no_cos_lr=False):
     """
     Train a YOLOv8 model for multi-class instance segmentation.
     
@@ -35,6 +35,8 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
         wandb_name: W&B run name (default: auto-generated based on model size and timestamp)
         wandb_entity: W&B entity (username or team name)
         resume_wandb: Whether to resume a previous W&B run
+        lr: Fixed learning rate (None = use YOLOv8's default)
+        no_cos_lr: Disable cosine learning rate scheduler
     """
     # Suppress warnings about plot limits if requested
     if hide_plot_warnings:
@@ -56,7 +58,11 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
     # Generate W&B run name if not provided
     if use_wandb and wandb_name is None:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        wandb_name = f"multiclass-seg-{model_size}-{timestamp}"
+        # Include learning rate in run name if specified
+        lr_suffix = ""
+        if lr is not None:
+            lr_suffix = f"_lr{lr}"
+        wandb_name = f"multiclass-seg-{model_size}{lr_suffix}-{timestamp}"
     
     # Initialize W&B
     if use_wandb:
@@ -87,7 +93,8 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
                 "num_classes": dataset_info.get("nc", "unknown"),
                 "class_names": dataset_info.get("names", "unknown"),
                 "optimizer": "auto",
-                "cos_lr": True
+                "cos_lr": not no_cos_lr,
+                "learning_rate": lr
             }
         )
         print(f"W&B initialized: {wandb.run.name}")
@@ -114,7 +121,7 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
         'deterministic': True,  # deterministic training
         'single_cls': False,  # multi-class dataset
         'rect': False,  # rectangular training
-        'cos_lr': True,  # cosine LR scheduler
+        'cos_lr': not no_cos_lr,  # cosine LR scheduler (can be disabled)
         'close_mosaic': 10,  # disable mosaic augmentation last 10 epochs
         'resume': False,  # resume training
         'amp': True,  # Automatic Mixed Precision (AMP) training
@@ -127,6 +134,10 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
         'mask_ratio': 4,  # mask downsampling ratio
         'device': device,  # device to train on
     }
+    
+    # Set learning rate if specified
+    if lr is not None:
+        train_args['lr0'] = lr  # initial learning rate
     
     # Add max_plot parameter if specified
     if max_plot_items is not None:
@@ -282,6 +293,9 @@ if __name__ == "__main__":
     parser.add_argument("--device", type=str, default="", help="Device to train on ('cpu', '0', '0,1,2,3', etc.)")
     parser.add_argument("--max_plot_items", type=int, help="Maximum items per validation plot (default is YOLOv8's 50)")
     parser.add_argument("--hide_plot_warnings", action="store_true", help="Hide warnings about validation plot limits")
+    # Learning rate parameters
+    parser.add_argument("--lr", type=float, help="Initial learning rate (default: auto)")
+    parser.add_argument("--no_cos_lr", action="store_true", help="Disable cosine learning rate scheduler")
     # W&B arguments
     parser.add_argument("--no_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--wandb_project", type=str, default="segmentation-multiclass", help="W&B project name")
@@ -307,5 +321,7 @@ if __name__ == "__main__":
         wandb_project=args.wandb_project,
         wandb_name=args.wandb_name,
         wandb_entity=args.wandb_entity,
-        resume_wandb=args.resume_wandb
+        resume_wandb=args.resume_wandb,
+        lr=args.lr,
+        no_cos_lr=args.no_cos_lr
     ) 
