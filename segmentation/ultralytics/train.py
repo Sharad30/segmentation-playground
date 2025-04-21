@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=640, model_size='n', 
                                 patience=5, workers=8, device='', max_plot_items=None, hide_plot_warnings=False,
                                 use_wandb=True, wandb_project="segmentation-multiclass", wandb_name=None, 
-                                wandb_entity=None, resume_wandb=False, lr=None, no_cos_lr=False):
+                                wandb_entity=None, resume_wandb=False, lr=None, no_cos_lr=False, optimizer="auto"):
     """
     Train a YOLOv8 model for multi-class instance segmentation.
     
@@ -92,7 +92,7 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
                 "dataset": dataset_yaml,
                 "num_classes": dataset_info.get("nc", "unknown"),
                 "class_names": dataset_info.get("names", "unknown"),
-                "optimizer": "auto",
+                "optimizer": optimizer,
                 "cos_lr": not no_cos_lr,
                 "learning_rate": lr
             }
@@ -115,7 +115,7 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
         'name': wandb_name if use_wandb else 'multiclass-seg',  
         'exist_ok': True,  # existing project/name ok, do not increment
         'pretrained': True,  # use pretrained weights
-        'optimizer': 'auto',  # optimizer to use
+        'optimizer': optimizer,  # optimizer to use
         'verbose': True,  # print results
         'seed': 0,  # random seed
         'deterministic': True,  # deterministic training
@@ -302,6 +302,7 @@ if __name__ == "__main__":
     parser.add_argument("--wandb_name", type=str, help="W&B run name (default: auto-generated)")
     parser.add_argument("--wandb_entity", type=str, help="W&B entity (username or team name)")
     parser.add_argument("--resume_wandb", action="store_true", help="Resume previous W&B run")
+    parser.add_argument("--optimizer", type=str, default="AdamW", help="Optimizer to use (auto, AdamW, SGD, etc.)")
     
     args = parser.parse_args()
     
@@ -323,5 +324,6 @@ if __name__ == "__main__":
         wandb_entity=args.wandb_entity,
         resume_wandb=args.resume_wandb,
         lr=args.lr,
-        no_cos_lr=args.no_cos_lr
+        no_cos_lr=args.no_cos_lr,
+        optimizer=args.optimizer
     ) 
