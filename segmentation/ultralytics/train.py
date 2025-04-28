@@ -11,11 +11,13 @@ import json
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+import torch
 
 def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=640, model_size='n', 
                                 patience=5, workers=8, device='', max_plot_items=None, hide_plot_warnings=False,
                                 use_wandb=True, wandb_project="segmentation-multiclass", wandb_name=None, 
-                                wandb_entity=None, resume_wandb=False, lr=None, no_cos_lr=False, optimizer="auto"):
+                                wandb_entity=None, resume_wandb=False, lr=None, no_cos_lr=False, optimizer="auto",
+                                log_lr_per_epoch=False):
     """
     Train a YOLOv8 model for multi-class instance segmentation.
     
@@ -37,6 +39,7 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
         resume_wandb: Whether to resume a previous W&B run
         lr: Fixed learning rate (None = use YOLOv8's default)
         no_cos_lr: Disable cosine learning rate scheduler
+        log_lr_per_epoch: Whether to log the learning rate for each epoch
     """
     # Suppress warnings about plot limits if requested
     if hide_plot_warnings:
@@ -155,6 +158,65 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
                 # Read the CSV into a pandas DataFrame
                 df = pd.read_csv(csv_path)
                 
+                # Extract learning rate information if log_lr_per_epoch is enabled
+                if log_lr_per_epoch:
+                    # Check if lr.npy exists
+                    lr_file = results.save_dir / "lr.npy"
+                    if not lr_file.exists():
+                        # If lr.npy doesn't exist, try to find optimizer history in model's files
+                        for file in results.save_dir.glob("*.pt"):
+                            if "last" in file.name or "best" in file.name:
+                                try:
+                                    # Load the model to extract optimizer state
+                                    checkpoint = torch.load(file, map_location='cpu')
+                                    if 'optimizer' in checkpoint and 'param_groups' in checkpoint['optimizer']:
+                                        # Extract learning rates from optimizer state
+                                        lrs = [pg['lr'] for pg in checkpoint['optimizer']['param_groups']]
+                                        # Use the first lr
+                                        lr_values = [lrs[0] if lrs else None]
+                                        np.save(str(lr_file), lr_values)
+                                        break
+                                except Exception as e:
+                                    print(f"Warning: Could not extract learning rates from {file}: {e}")
+                
+                    # If lr.npy now exists, load and log learning rates
+                    if lr_file.exists():
+                        try:
+                            lr_values = np.load(str(lr_file))
+                            # Create a column for learning rates
+                            df['learning_rate'] = None
+                            # Fill in learning rate values
+                            for i in range(min(len(df), len(lr_values))):
+                                df.loc[i, 'learning_rate'] = lr_values[i]
+                        except Exception as e:
+                            print(f"Warning: Could not load learning rates from {lr_file}: {e}")
+                    else:
+                        # If we couldn't find learning rates, estimate from the initial learning rate
+                        if lr is not None:
+                            # For cosine scheduler, estimate learning rate per epoch
+                            if not no_cos_lr:
+                                # Cosine annealing formula: lr = lr_min + 0.5 * (lr_max - lr_min) * (1 + cos(t/T * pi))
+                                # Where t is current epoch and T is total epochs
+                                lr_min = lr * 0.01  # typical minimum LR is 1% of initial
+                                df['learning_rate'] = [
+                                    lr_min + 0.5 * (lr - lr_min) * (1 + np.cos(epoch / epochs * np.pi))
+                                    for epoch in df['epoch']
+                                ]
+                            else:
+                                # Constant learning rate
+                                df['learning_rate'] = lr
+                        else:
+                            # If no learning rate was specified, use default YOLOv8 values
+                            default_lr = 0.01
+                            if not no_cos_lr:
+                                lr_min = default_lr * 0.01
+                                df['learning_rate'] = [
+                                    lr_min + 0.5 * (default_lr - lr_min) * (1 + np.cos(epoch / epochs * np.pi))
+                                    for epoch in df['epoch']
+                                ]
+                            else:
+                                df['learning_rate'] = default_lr
+                
                 # Log each epoch's metrics to wandb
                 for index, row in df.iterrows():
                     epoch_metrics = {}
@@ -200,6 +262,17 @@ def train_multiclass_segmentation(dataset_yaml, epochs=50, batch_size=16, imgsz=
                         ax.legend()
                         ax.grid(True)
                         wandb.log({"plots/losses": wandb.Image(fig)})
+                        plt.close(fig)
+                    
+                    # If learning rate is available, create a learning rate plot
+                    if 'learning_rate' in df.columns:
+                        fig, ax = plt.subplots(figsize=(10, 6))
+                        ax.plot(df['epoch'], df['learning_rate'])
+                        ax.set_xlabel('Epoch')
+                        ax.set_ylabel('Learning Rate')
+                        ax.set_title('Learning Rate Schedule')
+                        ax.grid(True)
+                        wandb.log({"plots/learning_rate": wandb.Image(fig)})
                         plt.close(fig)
                 
                 # Also upload the CSV as an artifact
@@ -296,6 +369,7 @@ if __name__ == "__main__":
     # Learning rate parameters
     parser.add_argument("--lr", type=float, help="Initial learning rate (default: auto)")
     parser.add_argument("--no_cos_lr", action="store_true", help="Disable cosine learning rate scheduler")
+    parser.add_argument("--log_lr", action="store_true", help="Log learning rate for each epoch")
     # W&B arguments
     parser.add_argument("--no_wandb", action="store_true", help="Disable Weights & Biases logging")
     parser.add_argument("--wandb_project", type=str, default="segmentation-multiclass", help="W&B project name")
@@ -325,5 +399,6 @@ if __name__ == "__main__":
         resume_wandb=args.resume_wandb,
         lr=args.lr,
         no_cos_lr=args.no_cos_lr,
-        optimizer=args.optimizer
+        optimizer=args.optimizer,
+        log_lr_per_epoch=args.log_lr
     ) 

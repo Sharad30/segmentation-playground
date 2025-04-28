@@ -71,3 +71,7 @@ results[0].show()
 # Save results
 results[0].save('results.jpg')
 ```
+
+
+
+curl -L "https://universe.roboflow.com/ds/7rBmZBvwIm?key=D05ucjWbK4" > roboflow.zip; unzip roboflow.zip; rm roboflow.zip
