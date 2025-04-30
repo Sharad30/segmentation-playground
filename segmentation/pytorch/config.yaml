@@ -1,0 +1,38 @@
+# Dataset configuration
+data_dir: "/home/ubuntu/sharad/segmentation-playground/datasets/processed/voc_coco_semantic"
+num_classes: 21  # 20 classes + background (0)
+input_size: 512  # Input image size
+batch_size: 32
+num_workers: 4
+
+# Model configuration
+model_type: "resnet_unet"
+n_channels: 3
+bilinear: true  # Use bilinear upsampling
+pretrained: true  # Use pretrained ResNet34 weights
+
+# Training configuration 
+epochs: 200
+learning_rate: 0.001  # Fixed learning rate with AdamW
+weight_decay: 0.01
+use_lr_scheduler: false  # Fixed learning rate as requested
+min_lr: 0.00001  # Only used if use_lr_scheduler is true
+
+# Augmentation configuration
+brightness: 0.1
+contrast: 0.1
+saturation: 0.1
+hue: 0.05
+
+# Technical configuration
+seed: 42
+use_amp: true  # Use mixed precision training if available
+
+# Output configuration
+output_dir: "artifacts/pytorch/output"
+log_dir: "artifacts/pytorch/logs"
+run_name: "resnet_unet_voc_semantic_200_epochs_32_bs_0.001_lr"
+
+# Wandb configuration
+use_wandb: true
+wandb_project: "semantic-segmentation-voc" 
