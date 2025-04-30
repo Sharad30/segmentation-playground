@@ -3,6 +3,8 @@ output*
 *.pt
 runs
 wandb
+artifacts
+notebooks
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
