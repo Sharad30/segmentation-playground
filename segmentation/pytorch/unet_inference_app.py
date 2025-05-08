@@ -14,6 +14,7 @@ import torch.nn.functional as F
 from PIL import Image
 import cv2
 from loguru import logger
+import json
 
 # Add the parent directory to the path for imports
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
@@ -310,6 +311,183 @@ def display_results(image, mask, class_names):
         # Display as table
         st.table(class_stats)
 
+def load_validation_images_and_masks():
+    """Load validation images and their corresponding masks from VOC-COCO semantic dataset"""
+    val_images_dir = "/home/ubuntu/sharad/segmentation-playground/datasets/processed/voc_coco_semantic/images/val"
+    val_annotations_file = "/home/ubuntu/sharad/segmentation-playground/datasets/processed/voc_coco_semantic/annotations/instances_val.json"
+    
+    # Get list of validation images
+    image_files = glob.glob(os.path.join(val_images_dir, "*.jpg"))
+    
+    # Create a list of tuples (image_path, image_id)
+    image_paths = []
+    for image_path in image_files:
+        image_name = os.path.basename(image_path)
+        image_id = os.path.splitext(image_name)[0]  # Remove .jpg extension
+        image_paths.append((image_path, image_id))
+    
+    return image_paths
+
+def load_coco_annotations(image_id):
+    """Load COCO format annotations for a specific image"""
+    annotations_file = "/home/ubuntu/sharad/segmentation-playground/datasets/processed/voc_coco_semantic/annotations/instances_val.json"
+    
+    try:
+        with open(annotations_file, 'r') as f:
+            coco_data = json.load(f)
+        
+        # Find image info
+        image_info = None
+        for img in coco_data['images']:
+            if img['file_name'].startswith(image_id):
+                image_info = img
+                break
+        
+        if image_info is None:
+            return None
+            
+        # Get all annotations for this image
+        image_annotations = []
+        for ann in coco_data['annotations']:
+            if ann['image_id'] == image_info['id']:
+                image_annotations.append(ann)
+        
+        return image_info, image_annotations
+        
+    except Exception as e:
+        st.error(f"Error loading annotations: {e}")
+        return None
+
+def create_mask_from_coco(image_shape, annotations):
+    """Create a segmentation mask from COCO format annotations"""
+    mask = np.zeros(image_shape[:2], dtype=np.uint8)
+    
+    try:
+        for ann in annotations:
+            category_id = ann['category_id']
+            segmentation = ann['segmentation']
+            
+            # Convert segmentation to binary mask
+            for seg in segmentation:
+                # Convert polygon to numpy array
+                poly = np.array(seg).reshape(-1, 2)
+                
+                # Convert to integer coordinates
+                poly = poly.astype(np.int32)
+                
+                # Fill polygon with category ID
+                cv2.fillPoly(mask, [poly], category_id)
+    
+    except Exception as e:
+        st.error(f"Error creating mask: {e}")
+    
+    return mask
+
+def display_validation_results(image, actual_mask, pred_mask, class_names):
+    """Display original image, actual mask, and predicted mask side by side"""
+    # Create three columns for display with equal width
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    # Resize images for display
+    display_height = 250  # Reduced from 300 to 250
+    aspect_ratio = image.shape[1] / image.shape[0]
+    display_width = int(display_height * aspect_ratio)
+    display_image = cv2.resize(image, (display_width, display_height))
+    
+    # Resize masks to match display size
+    display_actual_mask = cv2.resize(actual_mask, (display_width, display_height), interpolation=cv2.INTER_NEAREST)
+    display_pred_mask = cv2.resize(pred_mask, (display_width, display_height), interpolation=cv2.INTER_NEAREST)
+    
+    # Display original image
+    with col1:
+        st.subheader("Original Image")
+        st.image(display_image, width=display_width)
+    
+    # Calculate figure size
+    fig_size = 2.5  # Fixed small figure size
+    
+    # Display actual mask
+    with col2:
+        st.subheader("Ground Truth")
+        fig, ax = plt.subplots(figsize=(fig_size * aspect_ratio, fig_size))
+        
+        # Remove padding and margins
+        plt.subplots_adjust(left=0, right=0.85, bottom=0, top=1, wspace=0, hspace=0)
+        
+        ax.imshow(display_image)
+        
+        # Create colored mask for visualization
+        colored_mask = np.zeros((display_height, display_width, 3), dtype=np.uint8)
+        colormap = plt.cm.get_cmap('tab20', len(class_names))
+        
+        for class_id in range(len(class_names)):
+            if class_id == 0:  # Skip background
+                continue
+            indices = display_actual_mask == class_id
+            if np.any(indices):
+                color = np.array(colormap(class_id)[:3]) * 255
+                colored_mask[indices] = color
+        
+        ax.imshow(colored_mask, alpha=0.5)
+        ax.axis('off')
+        st.pyplot(fig)
+    
+    # Display predicted mask
+    with col3:
+        st.subheader("Prediction")
+        fig, ax = plt.subplots(figsize=(fig_size * aspect_ratio, fig_size))
+        
+        # Remove padding and margins
+        plt.subplots_adjust(left=0, right=0.85, bottom=0, top=1, wspace=0, hspace=0)
+        
+        ax.imshow(display_image)
+        
+        # Create colored mask for predictions
+        colored_pred_mask = np.zeros((display_height, display_width, 3), dtype=np.uint8)
+        
+        for class_id in range(len(class_names)):
+            if class_id == 0:  # Skip background
+                continue
+            indices = display_pred_mask == class_id
+            if np.any(indices):
+                color = np.array(colormap(class_id)[:3]) * 255
+                colored_pred_mask[indices] = color
+        
+        ax.imshow(colored_pred_mask, alpha=0.5)
+        ax.axis('off')
+        st.pyplot(fig)
+    
+    # Display class statistics
+    st.subheader("Class Statistics")
+    
+    # Count pixels per class in both actual and predicted masks
+    stats = []
+    total_pixels = actual_mask.size
+    
+    for class_id in range(len(class_names)):
+        if class_id == 0:  # Skip background
+            continue
+            
+        class_name = class_names.get(class_id, f"Class {class_id}")
+        actual_count = np.sum(actual_mask == class_id)
+        pred_count = np.sum(pred_mask == class_id)
+        actual_percent = (actual_count / total_pixels) * 100
+        pred_percent = (pred_count / total_pixels) * 100
+        
+        if actual_count > 0 or pred_count > 0:
+            stats.append({
+                "Class": class_name,
+                "Ground Truth Pixels": actual_count,
+                "Ground Truth %": f"{actual_percent:.2f}%",
+                "Predicted Pixels": pred_count,
+                "Predicted %": f"{pred_percent:.2f}%"
+            })
+    
+    if stats:
+        st.table(stats)
+    else:
+        st.warning("No classes detected in either ground truth or predicted masks.")
+
 def main():
     try:
         st.set_page_config(page_title="UNet Semantic Segmentation Inference", layout="wide")
@@ -317,104 +495,217 @@ def main():
         st.title("UNet Semantic Segmentation Inference")
         st.write("Select a trained model and upload an image to run semantic segmentation")
         
-        # Check CUDA
-        if torch.cuda.is_available():
-            device = "cuda"
-            cuda_info = f"CUDA available: {torch.cuda.get_device_name(0)}"
-            st.sidebar.success(cuda_info)
-        else:
-            device = "cpu"
-            st.sidebar.warning("CUDA not available. Using CPU for inference.")
-        
-        # List available models
-        all_models = find_models()
-        
-        if not all_models:
-            st.error("No trained models found in the artifacts directory. Please run training first.")
+        # Find available models
+        available_models = find_models()
+        if not available_models:
+            st.error("No trained models found in artifacts directory")
             return
-        
+            
         # Model selection
-        model_options = [name for _, name in all_models]
-        selected_model_name = st.selectbox("Select a model", model_options)
+        selected_model_path, selected_model_name = st.selectbox(
+            "Select a model",
+            available_models,
+            format_func=lambda x: x[1]
+        )
         
-        # Get the model path for the selected name
-        selected_model_path = next((path for path, name in all_models if name == selected_model_name), None)
+        # Load model
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        model, class_names, config = load_model(selected_model_path, device)
+        if model is None:
+            return
+            
+        # Add tabs for different input methods
+        tab1, tab2 = st.tabs(["Upload Image", "Random Validation Image"])
         
-        if selected_model_path:
-            st.write(f"Model path: `{selected_model_path}`")
+        with tab1:
+            # File uploader
+            uploaded_file = st.file_uploader("Choose an image...", type=["jpg", "jpeg", "png"])
             
-            # Load model
-            with st.spinner("Loading model..."):
-                model, class_names, config = load_model(selected_model_path, device)
-            
-            if model is None:
-                st.error("Failed to load model.")
-                return
-                
-            # Display model info
-            st.write(f"Model classes: {len(class_names)}")
-            
-            # Settings
-            col1, col2 = st.columns(2)
-            with col1:
-                input_size = st.slider("Input Size", min_value=256, max_value=1024, value=config.get('input_size', 512), step=64)
-            with col2:
-                if torch.cuda.is_available():
-                    device_options = ['cuda', 'cpu']
-                    device = st.selectbox("Device", device_options, index=0)
-                else:
-                    device = 'cpu'
-                    st.warning("CUDA not available. Using CPU for inference.")
-            
-            # Image upload
-            uploaded_file = st.file_uploader("Upload an image", type=["jpg", "jpeg", "png"])
-            
-            use_camera = st.checkbox("Or use camera input")
-            camera_image = None
-            
-            if use_camera:
-                camera_image = st.camera_input("Take a photo")
-            
-            # When image is uploaded or camera used
-            if uploaded_file is not None or camera_image is not None:
+            if uploaded_file is not None:
                 try:
-                    image_source = camera_image if uploaded_file is None else uploaded_file
+                    # Load and preprocess image
+                    image = Image.open(uploaded_file)
+                    image_array = np.array(image)
                     
-                    # Load image
-                    image = Image.open(image_source)
+                    # Ensure image is RGB
+                    if len(image_array.shape) == 2:  # Grayscale
+                        image_array = cv2.cvtColor(image_array, cv2.COLOR_GRAY2RGB)
+                    elif image_array.shape[2] == 4:  # RGBA
+                        image_array = cv2.cvtColor(image_array, cv2.COLOR_RGBA2RGB)
                     
-                    # Display original image
-                    st.subheader("Original Image")
-                    st.image(image, use_column_width=True)
+                    # Resize image if needed
+                    if config.get('input_size'):
+                        input_size = config['input_size']
+                        image_array = cv2.resize(image_array, (input_size, input_size))
                     
-                    # Run inference
-                    if st.button("Run Inference"):
-                        with st.spinner("Running inference..."):
-                            mask, inference_time = run_inference(
-                                model, 
-                                image, 
-                                device,
-                                input_size
+                    # Normalize and convert to tensor
+                    input_tensor = torch.from_numpy(image_array.transpose(2, 0, 1)).float() / 255.0
+                    input_tensor = input_tensor.unsqueeze(0)
+                    input_tensor = input_tensor.to(device)
+                    
+                    # Make prediction
+                    with torch.no_grad():
+                        output = model(input_tensor)
+                        output = F.softmax(output, dim=1)
+                        pred_mask = output.argmax(1).squeeze().cpu().numpy()
+                    
+                    # Resize images for display
+                    display_height = 250  # Reduced from 300 to 250
+                    aspect_ratio = image_array.shape[1] / image_array.shape[0]
+                    display_width = int(display_height * aspect_ratio)
+                    display_image = cv2.resize(image_array, (display_width, display_height))
+                    
+                    # Resize prediction mask to match display size
+                    display_mask = cv2.resize(pred_mask, (display_width, display_height), interpolation=cv2.INTER_NEAREST)
+                    
+                    # Display images side by side using two columns with equal width
+                    col1, col2 = st.columns([1, 1])
+                    
+                    with col1:
+                        st.subheader("Original Image")
+                        st.image(display_image, width=display_width)
+                    
+                    with col2:
+                        st.subheader("Prediction")
+                        # Create figure with matching size
+                        fig_size = 2.5  # Fixed small figure size
+                        fig, ax = plt.subplots(figsize=(fig_size * aspect_ratio, fig_size))
+                        
+                        # Remove padding and margins
+                        plt.subplots_adjust(left=0, right=0.85, bottom=0, top=1, wspace=0, hspace=0)
+                        
+                        # Display the resized image
+                        ax.imshow(display_image)
+                        
+                        # Create colormap and colored mask
+                        colormap = plt.cm.get_cmap('tab20', len(class_names))
+                        colored_mask = np.zeros((display_height, display_width, 3), dtype=np.uint8)
+                        
+                        # Create legend patches
+                        legend_patches = []
+                        
+                        for class_id in range(len(class_names)):
+                            if class_id == 0:  # Skip background
+                                continue
+                            indices = display_mask == class_id
+                            if np.any(indices):
+                                color = colormap(class_id)[:3]
+                                colored_mask[indices] = np.array(color) * 255
+                                
+                                # Add to legend
+                                patch = mpatches.Patch(
+                                    color=color, 
+                                    label=f"{class_names[class_id]}"
+                                )
+                                legend_patches.append(patch)
+                        
+                        # Show mask overlay
+                        ax.imshow(colored_mask, alpha=0.5)
+                        
+                        # Add legend if we have any classes
+                        if legend_patches:
+                            # Move legend outside the plot to prevent overlap
+                            ax.legend(
+                                handles=legend_patches,
+                                bbox_to_anchor=(1.15, 1),
+                                loc='upper left',
+                                fontsize=8
                             )
                         
-                        if mask is not None:
-                            # Display inference time
-                            st.success(f"Inference completed in {inference_time:.3f} seconds")
-                            
-                            # Display results
-                            st.subheader("Results")
-                            display_results(image, mask, class_names)
-                        else:
-                            st.error("Inference failed. Check the error messages above.")
+                        ax.axis('off')
+                        st.pyplot(fig)
+                    
+                    # Display class statistics below the images
+                    st.subheader("Class Statistics")
+                    class_stats = []
+                    total_pixels = pred_mask.size
+                    
+                    for class_id in range(len(class_names)):
+                        if class_id == 0:  # Skip background
+                            continue
+                        indices = pred_mask == class_id
+                        if np.any(indices):
+                            pixel_count = np.sum(indices)
+                            percentage = (pixel_count / total_pixels) * 100
+                            class_stats.append({
+                                "Class": class_names[class_id],
+                                "Pixels": pixel_count,
+                                "Percentage": f"{percentage:.2f}%"
+                            })
+                    
+                    if class_stats:
+                        st.table(class_stats)
+                    else:
+                        st.warning("No classes detected in the image")
+                
                 except Exception as e:
-                    st.error(f"Error processing image: {e}")
-                    logger.error(f"Error processing image: {e}")
+                    st.error(f"Error processing uploaded image: {e}")
+                    logger.error(f"Error processing uploaded image: {e}")
+                    import traceback
+                    st.code(traceback.format_exc())
+        
+        with tab2:
+            # Load validation images
+            image_paths = load_validation_images_and_masks()
+            
+            if not image_paths:
+                st.error("No validation images found")
+                return
+            
+            # Add checkbox for random image selection
+            if st.checkbox("Load Random Validation Image"):
+                try:
+                    # Randomly select an image
+                    image_path, image_id = image_paths[np.random.randint(len(image_paths))]
+                    
+                    # Load image and annotations
+                    image = cv2.imread(image_path)
+                    if image is None:
+                        st.error(f"Failed to load image: {image_path}")
+                        return
+                        
+                    image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+                    
+                    # Load COCO annotations
+                    result = load_coco_annotations(image_id)
+                    if result is None:
+                        st.error(f"Failed to load annotations for image: {image_id}")
+                        return
+                        
+                    image_info, annotations = result
+                    
+                    # Create ground truth mask
+                    actual_mask = create_mask_from_coco(image.shape[:2], annotations)
+                    
+                    # Resize if needed
+                    if config.get('input_size'):
+                        input_size = config['input_size']
+                        image = cv2.resize(image, (input_size, input_size))
+                        actual_mask = cv2.resize(actual_mask, (input_size, input_size), interpolation=cv2.INTER_NEAREST)
+                    
+                    # Prepare input tensor
+                    input_tensor = torch.from_numpy(image.transpose(2, 0, 1)).float() / 255.0
+                    input_tensor = input_tensor.unsqueeze(0)
+                    input_tensor = input_tensor.to(device)
+                    
+                    # Make prediction
+                    with torch.no_grad():
+                        output = model(input_tensor)
+                        output = F.softmax(output, dim=1)
+                        pred_mask = output.argmax(1).squeeze().cpu().numpy()
+                    
+                    # Display results
+                    display_validation_results(image, actual_mask, pred_mask, class_names)
+                    
+                except Exception as e:
+                    st.error(f"Error processing validation image: {e}")
+                    logger.error(f"Error processing validation image: {e}")
                     import traceback
                     st.code(traceback.format_exc())
     
     except Exception as e:
-        st.error(f"Unexpected error: {e}")
-        logger.error(f"Unexpected error: {e}")
+        st.error(f"An error occurred: {str(e)}")
+        logger.error(f"Error in main: {str(e)}")
         import traceback
         st.code(traceback.format_exc())
 
